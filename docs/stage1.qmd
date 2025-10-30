@@ -430,7 +430,7 @@ library(kableExtra)
 options(knitr.kable.NA = "", dplyr.summarise.inform = FALSE)
 ```
 
-## 1) Data loading (prefer in-memory; else RDS/Excel)
+## Data loading (prefer in-memory; else RDS/Excel)
 
 ```{r}
 #| label: data-load
@@ -471,7 +471,7 @@ df_model %>%
 
 ```
 
-## 2) Time & event construction (no renaming; robust coding)
+## Time & event construction (no renaming; robust coding)
 
 ```{r}
 #| label: time-event
@@ -526,7 +526,7 @@ df_surv %>%
   kable_styling(full_width = FALSE)
 ```
 
-## 3) Recode levels to English (columns are preserved)
+## Recode levels to English (columns are preserved)
 
 ```{r}
 #| label: recode-levels
@@ -587,7 +587,7 @@ df_surv <- df_surv %>%
   )
 ```
 
-## 11) Nested models — **Cox PH** (M2 adds frequency)
+## Nested models — **Cox PH** (M2 adds frequency)
 
 ```{r}
 #| label: nested-cox
@@ -740,7 +740,7 @@ kbl(cox_table, caption = "Nested Cox proportional hazards models — single tabl
   pack_rows("Model fit", nrow(cox_nested)+1, nrow(cox_table))
 ```
 
-## 12) Nested models — **Weibull AFT** (M2 adds frequency; TR)
+## Nested models — **Weibull AFT** (M2 adds frequency; TR)
 
 ```{r}
 #| label: nested-aft
@@ -897,7 +897,7 @@ kbl(aft_table, caption = "Nested Weibull AFT models — single table (M2 adds co
   pack_rows("Model fit", nrow(aft_nested)+1, nrow(aft_table))
 ```
 
-## 13) Nested models — **Logistic regression** (M2 adds frequency; OR)
+## Nested models — **Logistic regression** (M2 adds frequency; OR)
 
 ```{r}
 #| label: nested-logit

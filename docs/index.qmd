@@ -1,26 +1,27 @@
 ---
-title: "Untitled"
-format: html
-editor: visual
+title: "nDP SISTRAT"
+lang: en
+author:
+  - name: "Diego Jorquera"
+    email: j
+    orcid: "0000-0000-0000-0000"
+  - name: "Amaru Simón Agüero Jiménez"
+    email: amaruaguero2004@ug.uchile.cl
+    orcid: "0000-0001-7336-1833"
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: true
+execute:
+  warning: false #que los chunks no arrojen mensajes de emergencia
+  message: false #que los chunks no arrojen mensajes
+  fig-width: 12 #ancho de las figuras en el documento
+  fig-height: 10 #alto de las figuras
 ---
 
-## Quarto
+# About Repository
 
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+# Stages
 
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
-```
-
-You can add options to executable code like this
-
-```{r}
-#| echo: false
-2 * 2
-```
-
-The `echo: false` option disables the printing of code (only output is displayed).
+- [E11 and SUD](https://amarusimonaguerojimenez.github.io/nDP-SISTRAT-HOSP/stage1.html)

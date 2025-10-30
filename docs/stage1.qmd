@@ -1,26 +1,1045 @@
 ---
-title: "satge"
-format: html
-editor: visual
+title: "nDP SISTRAT"
+lang: en
+author:
+  - name: "Diego Jorquera"
+    email: diego.jorquera@uss.cl
+    orcid: "0000-0000-0000-0000"
+  - name: "Amaru Simón Agüero Jiménez"
+    email: amaruaguero2004@ug.uchile.cl
+    orcid: "0000-0001-7336-1833"
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: true
+execute:
+  warning: false #que los chunks no arrojen mensajes de emergencia
+  message: false #que los chunks no arrojen mensajes
+  fig-width: 12 #ancho de las figuras en el documento
+  fig-height: 10 #alto de las figuras
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+# Data administration
 
 ```{r}
-1 + 1
+# Function to install and load packages
+install_and_load <- function(package) {
+  if (!require(package, character.only = TRUE)) {
+    utils::install.packages(package)
+    library(package, character.only = TRUE)
+  }
+}
+
+# List of packages to be installed and loaded
+packages <- c("devtools", "renv", "tidyverse", "janitor", "data.table","lubridate", "writexl",
+              "kableExtra", "reticulate", "FactoMineR", "factoextra", "knitr","plotly", "ggbreak", "patchwork","latex2exp","msm","haven","MatchIt", "survival","broom","pROC")
+
+# Apply the function to each package
+invisible(capture.output(sapply(packages, install_and_load)))
+
+opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+options(scipen = 999)
+
+rm(list = ls())
+
+CONS_C1_2010_22 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/CONS_C1_2010_22.rds"))
+HOSP <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/HOSP.rds"))
+HOSP20102022_MERGE1 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/HOSP20102022_MERGE1.rds"))
+CONS_C1_2010_22_MERGE <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/CONS_C1_2010_22_MERGE.rds"))
+CONS_C1_2010_22_MERGE1 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/CONS_C1_2010_22_MERGE1.rds"))
+CONS_C1_2010_22_MERGE2 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/CONS_C1_2010_22_MERGE2.rds"))
+MERGE1 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/MERGE1.rds"))
+MERGE2 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/MERGE2.rds"))
+MERGE2.1 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/MERGE2.1.rds"))
+MERGE2.2 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/MERGE2.2.rds"))
+MERGE3 <- readRDS(paste0(gsub("docs", "", getwd()),"/data/data_output/MERGE3.rds"))
+
+E11 <- HOSP20102022_MERGE1 %>% 
+  semi_join(CONS_C1_2010_22_MERGE1, by="HASH_KEY") %>% 
+  filter(str_detect(DIAG1, "^E11"))
+
+E11.1 <- E11 %>% 
+  left_join(CONS_C1_2010_22_MERGE1, by = "HASH_KEY") %>%
+  mutate(
+    fecha_ingresoa_tratamiento = as.Date(parse_date_time(fecha_ingresoa_tratamiento, orders = c("dmy", "mdy", "ymd"), exact = FALSE)),
+    fecha_egresode_tratamiento = as.Date(parse_date_time(fecha_egresode_tratamiento, orders = c("dmy", "mdy", "ymd"), exact = FALSE)),
+    FECHA_INGRESO = as.Date(FECHA_INGRESO)
+  ) %>%
+  mutate(diff_days = as.numeric(FECHA_INGRESO - fecha_egresode_tratamiento)) %>% 
+  filter(diff_days >= 0) %>%
+  group_by(HASH_KEY) %>%
+  filter(diff_days == min(diff_days, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  mutate(event=1) %>% select(1:33,136:137)
+
+
+
+dataE11 <- CONS_C1_2010_22_MERGE1 %>% 
+  mutate(
+    fecha_ingresoa_tratamiento = as.Date(parse_date_time(fecha_ingresoa_tratamiento, orders = c("dmy", "mdy", "ymd"), exact = FALSE)),
+    fecha_egresode_tratamiento = as.Date(parse_date_time(fecha_egresode_tratamiento, orders = c("dmy", "mdy", "ymd"), exact = FALSE))) %>% 
+  left_join(E11.1, by = "HASH_KEY") %>%
+  mutate(event = ifelse(is.na(event), 0, event)) %>% 
+  mutate(diff_days_calc = as.numeric(as.Date("2022-12-31") - fecha_egresode_tratamiento)) %>% 
+  filter(diff_days_calc > 0) %>% 
+  mutate(diff_days = ifelse(is.na(diff_days), diff_days_calc, diff_days)) %>% 
+  select(-diff_days_calc) %>%
+  mutate(sustancia_principal = case_when(
+    sustancia_principal %in% c("Inhalables", 
+                               "Inhalables: neopren, GHB, óxido nitroso (gas hilarante), \"poppers\", solventes, gasolina, diluyente") ~ "Inhalables",
+    sustancia_principal %in% c("Sedantes", 
+                               "Sedantes:  diazepam, Valium, clonazepam, Ravotril, alprazolam, adax, barbitúricos, fenobarbital.") ~ "Sedantes",
+    sustancia_principal %in% c("Otros Opioides Analgésicos", 
+                               "Otros Opioides Analgésicos: morfina, codeí­na, meperidina,  demerol, tramadol, tramal.") ~ "Opioides Analgésicos",
+    TRUE ~ sustancia_principal
+  )) %>% drop_na(diff_days)
+
+names(dataE11) <- make.names(names(dataE11), unique = TRUE)
+# Función para truncar los nombres a un máximo de 32 caracteres
+truncate_names <- function(names_vector) {
+  truncated_names <- substr(names_vector, 1, 32)
+  return(truncated_names)
+}
+
+# Aplicar la función para truncar los nombres de las columnas
+names(dataE11) <- truncate_names(names(dataE11))
+
+# failed_dates <- E11.1 %>% filter(is.na(fecha_ingresoa_tratamiento) | is.na(fecha_egresode_tratamiento))
+
+#DSR E1########################################################################
+CENSO2017<- readRDS(paste0(gsub("docs", "", getwd()), "/data/data_output/CENSO2017.rds"))
+CENSO2017<- CENSO2017 %>%
+  mutate(p09 = replace(p09, p09 %in% c(132, 131), NA)) %>%
+  mutate(p08 = replace(p08, p08 %in% c(3,0),NA)) %>%
+  mutate(SEXO = factor(p08, levels = c(1, 2), labels = c("male", "female"))) %>%
+  mutate(AGE_GROUP = cut(p09,
+                         breaks = c(-Inf, 4, 9, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, 69, 74, 79, 84, 89, 94, 99, Inf),
+                         labels = c("0-4", "5-9", "10-14", "15-19", "20-24", "25-29", "30-34", "35-39", "40-44",
+                                    "45-49", "50-54", "55-59", "60-64", "65-69", "70-74", "75-79", "80-84",
+                                    "85-89", "90-94", "95-99", "100+"),
+                         right = FALSE))
+
+STDPOPULATION <- CENSO2017 %>%
+  group_by(AGE_GROUP, SEXO) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = SEXO, values_from = n, names_prefix = "") %>%
+  mutate(male_std = male*100000/(sum(male)+sum(female))) %>%
+  mutate(female_std = female*100000/(sum(male)+sum(female)))
+
+recode_e1 <- function(code) {
+  case_when(
+    code >= "E100" & code <= "E109" ~ "E10 Type 1 diabetes mellitus",
+    code >= "E110" & code <= "E119" ~ "E11 Type 2 diabetes mellitus",
+    code >= "E120" & code <= "E129" ~ "E12 Malnutrition-related diabetes mellitus",
+    code >= "E130" & code <= "E139" ~ "E13 Other specified diabetes mellitus",
+    code >= "E140" & code <= "E149" ~ "E14 Unspecified diabetes mellitus",
+    TRUE ~ NA
+  )
+}
+col_DIAG <- grep("^DIAG", names(MERGE1), value = TRUE)
+
+MERGE1 <- MERGE1 %>% 
+  mutate(across(all_of(col_DIAG), ~recode_e1(substring(., 1, 4)), .names = "{.col}_e1"))
+
+HOSP20102022_DIAG1_RATES <- MERGE1  %>%
+  filter(SISTRAT==0) %>%
+  group_by(YEAR,AGE_GROUP,SEXO, DIAG1_e1) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  drop_na(SEXO,DIAG1_e1) %>%
+  pivot_wider(names_from = SEXO, values_from = n, names_prefix = "") %>%
+  mutate(across(everything(), ~na_if(., NA) %>% replace_na(0))) %>%
+  mutate(YEAR = as.character(YEAR))
+
+HOSP20102022_DIAG1_RATES_TOTAL <- HOSP20102022_DIAG1_RATES %>%
+  group_by(AGE_GROUP, DIAG1_e1) %>%
+  summarise(male = sum(male), female = sum(female), .groups = 'drop') %>%
+  mutate(YEAR = "Total")
+
+HOSP20102022_DIAG1_RATES <- bind_rows(HOSP20102022_DIAG1_RATES, HOSP20102022_DIAG1_RATES_TOTAL)
+
+C120102022_DIAG1_RATES <- MERGE1  %>%
+  filter(SISTRAT==1) %>%
+  group_by(YEAR,AGE_GROUP,SEXO, DIAG1_e1) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  drop_na(SEXO,DIAG1_e1) %>%
+  pivot_wider(names_from = SEXO, values_from = n, names_prefix = "") %>%
+  mutate(across(everything(), ~na_if(., NA) %>% replace_na(0))) %>%
+  mutate(YEAR = as.character(YEAR))
+
+C120102022_DIAG1_RATES_TOTAL <- C120102022_DIAG1_RATES %>%
+  group_by(AGE_GROUP, DIAG1_e1) %>%
+  summarise(male = sum(male), female = sum(female), .groups = 'drop') %>%
+  mutate(YEAR = "Total")
+
+C120102022_DIAG1_RATES <- bind_rows(C120102022_DIAG1_RATES, C120102022_DIAG1_RATES_TOTAL)
+
+TOTALS_HOSP_DIAG1 <- HOSP20102022_DIAG1_RATES %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_male = sum(male),
+    total_female = sum(female)
+  )
+
+TOTALS_C1_DIAG1 <- C120102022_DIAG1_RATES %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_male = sum(male),
+    total_female = sum(female)
+  )
+
+HOSP20102022_DIAG1_RATES_TOTALS <- HOSP20102022_DIAG1_RATES%>%
+  left_join(TOTALS_HOSP_DIAG1, by = "YEAR") %>%
+  left_join(STDPOPULATION[,c(1,4,5)], by = "AGE_GROUP") %>%
+  mutate(
+    male_rates = (male / total_male),
+    female_rates = (female / total_female)
+  ) %>%
+  mutate(
+    DSR_male = male_std*male_rates,
+    DSR_female = female_std*female_rates,
+    male_v = male_std^2*(male_rates/total_male),
+    female_v = male_std^2*(female_rates/total_female)
+  ) %>%
+  mutate(DSR_total = DSR_male + DSR_female,
+         v_total = male_v + female_v) %>%
+  group_by(YEAR,DIAG1_e1) %>%
+  summarise(DSR_HOSP = sum(DSR_total)/100000,
+            v_HOSP = sum(v_total)/100000^2,
+            .groups = 'drop')
+
+C120102022_DIAG1_RATES_TOTALS <- C120102022_DIAG1_RATES%>%
+  left_join(TOTALS_C1_DIAG1, by = "YEAR") %>%
+  left_join(STDPOPULATION[,c(1,4,5)], by = "AGE_GROUP") %>%
+  mutate(
+    male_rates = (male / total_male),
+    female_rates = (female / total_female)
+  ) %>%
+  mutate(
+    DSR_male = male_std*male_rates,
+    DSR_female = female_std*female_rates,
+    male_v = male_std^2*(male_rates/total_male),
+    female_v = male_std^2*(female_rates/total_female)
+  ) %>%
+  mutate(DSR_total = DSR_male + DSR_female,
+         v_total = male_v + female_v) %>%
+  group_by(YEAR,DIAG1_e1) %>%
+  summarise(DSR_C1 = sum(DSR_total)/100000,
+            v_C1 = sum(v_total)/100000^2,
+            .groups = 'drop')
+
+HOSP20102022_DIAG1_RATES_TOTALS <- HOSP20102022_DIAG1_RATES_TOTALS %>%
+  left_join(C120102022_DIAG1_RATES_TOTALS, by = c("YEAR", "DIAG1_e1")) %>%
+  mutate(SRR = DSR_C1/DSR_HOSP,
+         SRR_CI_UP = exp(log(SRR)+1.96*sqrt((v_HOSP/DSR_HOSP^2)+(v_C1/DSR_C1^2))),
+         SRR_CI_LOW = exp(log(SRR)-1.96*sqrt((v_HOSP/DSR_HOSP^2)+(v_C1/DSR_C1^2)))
+  )
+
+E11DSR <- HOSP20102022_DIAG1_RATES_TOTALS %>% filter(YEAR >= 2010 & str_starts(DIAG1_e1, "E11")) %>% mutate(DSRcC1x1000=DSR_C1*1000,
+                                                                                                            DSRcHOSPx1000=DSR_HOSP*1000)
+
+#E11.X ###########################################################################
+HOSP20102022_DIAG1_RATES <- MERGE1  %>%
+  filter(SISTRAT==0 & str_starts(DIAG1, "E11")) %>%
+  group_by(YEAR,AGE_GROUP,SEXO, DIAG1) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  drop_na(SEXO,DIAG1) %>%
+  pivot_wider(names_from = SEXO, values_from = n, names_prefix = "") %>%
+  mutate(across(everything(), ~na_if(., NA) %>% replace_na(0))) %>%
+  mutate(YEAR = as.character(YEAR))
+
+HOSP20102022_DIAG1_RATES_TOTAL <- HOSP20102022_DIAG1_RATES %>%
+  group_by(AGE_GROUP, DIAG1) %>%
+  summarise(male = sum(male), female = sum(female), .groups = 'drop') %>%
+  mutate(YEAR = "Total")
+
+HOSP20102022_DIAG1_RATES <- bind_rows(HOSP20102022_DIAG1_RATES, HOSP20102022_DIAG1_RATES_TOTAL)
+
+C120102022_DIAG1_RATES <- MERGE1  %>%
+  filter(SISTRAT==1 & str_starts(DIAG1, "E11")) %>%
+  group_by(YEAR,AGE_GROUP,SEXO, DIAG1) %>%
+  summarise(n = n(), .groups = 'drop') %>%
+  drop_na(SEXO,DIAG1) %>%
+  pivot_wider(names_from = SEXO, values_from = n, names_prefix = "") %>%
+  mutate(across(everything(), ~na_if(., NA) %>% replace_na(0))) %>%
+  mutate(YEAR = as.character(YEAR))
+
+C120102022_DIAG1_RATES_TOTAL <- C120102022_DIAG1_RATES %>%
+  group_by(AGE_GROUP, DIAG1) %>%
+  summarise(male = sum(male), female = sum(female), .groups = 'drop') %>%
+  mutate(YEAR = "Total")
+
+C120102022_DIAG1_RATES <- bind_rows(C120102022_DIAG1_RATES, C120102022_DIAG1_RATES_TOTAL)
+
+TOTALS_HOSP_DIAG1 <- HOSP20102022_DIAG1_RATES %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_male = sum(male),
+    total_female = sum(female)
+  )
+
+TOTALS_C1_DIAG1 <- C120102022_DIAG1_RATES %>%
+  group_by(YEAR) %>%
+  summarise(
+    total_male = sum(male),
+    total_female = sum(female)
+  )
+
+HOSP20102022_DIAG1_RATES_TOTALS <- HOSP20102022_DIAG1_RATES%>%
+  left_join(TOTALS_HOSP_DIAG1, by = "YEAR") %>%
+  left_join(STDPOPULATION[,c(1,4,5)], by = "AGE_GROUP") %>%
+  mutate(
+    male_rates = (male / total_male),
+    female_rates = (female / total_female)
+  ) %>%
+  mutate(
+    DSR_male = male_std*male_rates,
+    DSR_female = female_std*female_rates,
+    male_v = male_std^2*(male_rates/total_male),
+    female_v = male_std^2*(female_rates/total_female)
+  ) %>%
+  mutate(DSR_total = DSR_male + DSR_female,
+         v_total = male_v + female_v) %>%
+  group_by(YEAR,DIAG1) %>%
+  summarise(DSR_HOSP = sum(DSR_total)/100000,
+            v_HOSP = sum(v_total)/100000^2,
+            .groups = 'drop')
+
+C120102022_DIAG1_RATES_TOTALS <- C120102022_DIAG1_RATES%>%
+  left_join(TOTALS_C1_DIAG1, by = "YEAR") %>%
+  left_join(STDPOPULATION[,c(1,4,5)], by = "AGE_GROUP") %>%
+  mutate(
+    male_rates = (male / total_male),
+    female_rates = (female / total_female)
+  ) %>%
+  mutate(
+    DSR_male = male_std*male_rates,
+    DSR_female = female_std*female_rates,
+    male_v = male_std^2*(male_rates/total_male),
+    female_v = male_std^2*(female_rates/total_female)
+  ) %>%
+  mutate(DSR_total = DSR_male + DSR_female,
+         v_total = male_v + female_v) %>%
+  group_by(YEAR,DIAG1) %>%
+  summarise(DSR_C1 = sum(DSR_total)/100000,
+            v_C1 = sum(v_total)/100000^2,
+            .groups = 'drop')
+
+HOSP20102022_DIAG1_RATES_TOTALS <- HOSP20102022_DIAG1_RATES_TOTALS %>%
+  left_join(C120102022_DIAG1_RATES_TOTALS, by = c("YEAR", "DIAG1")) %>%
+  mutate(SRR = DSR_C1/DSR_HOSP,
+         SRR_CI_UP = exp(log(SRR)+1.96*sqrt((v_HOSP/DSR_HOSP^2)+(v_C1/DSR_C1^2))),
+         SRR_CI_LOW = exp(log(SRR)-1.96*sqrt((v_HOSP/DSR_HOSP^2)+(v_C1/DSR_C1^2)))
+  )
+
+E11XDSR <- HOSP20102022_DIAG1_RATES_TOTALS %>% filter(YEAR >= 2010) %>% mutate(DSRcC1x1000=DSR_C1*1000,
+                                                                               DSRcHOSPx1000=DSR_HOSP*1000)
+
+dataE11$event <- as.factor(dataE11$event)
+dataE11_clean <- dataE11 %>% drop_na(edad, region_del_centro,escolaridad_ultimo_ano_cursado)
+
+match_model <- matchit(event ~ edad + region_del_centro + sexo + escolaridad_ultimo_ano_cursado, 
+                       data = dataE11_clean , 
+                       method = "nearest", 
+                       ratio = 3)
+matched_dataE11 <- match.data(match_model)
+table(matched_dataE11$event)
 ```
 
-You can add options to executable code like this
 
 ```{r}
-#| echo: false
-2 * 2
+E11DSR %>%
+  filter(YEAR != "Total") %>%
+  pivot_longer(cols = c(DSRcC1x1000, DSRcHOSPx1000), 
+               names_to = "variable", 
+               values_to = "value") %>%
+  mutate(variable = recode(variable, 
+                           "DSRcHOSPx1000" = "General population", 
+                           "DSRcC1x1000" = "SUDT population")) %>% 
+  ggplot(., aes(x = as.factor(YEAR), y = value, color = variable , group = variable)) +
+  geom_line(size = 0.8, alpha = 0.5) +
+  geom_text(aes(label = round(value, 1)), vjust = -0.5, size = 3.5, show.legend = FALSE) + # Añadir etiquetas de valores
+  scale_color_manual(values = c("SUDT population"= "blue", "General population" = "red")) +
+  labs(x = "Year", 
+       y = TeX(r'($DSR = \frac{\sum_{}^{}\left(\frac{\it{E11 - ICD10 Hospitalization}_{\it{sex and age}}}{\it{Hospitalization}_{\it{sex and age}}} *\it{Standardized Population}_{\it{sex and age}}\right)}{\sum_{}^{}\it{Standardized Population}_{\it{sex and age}}}*1000$)'), 
+       color = "Hospitalization") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+
+ggsave("fig1.png", dpi = 1000, width = 10, height = 7, bg = "white")
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+E11XDSR %>%
+  filter(YEAR != "Total") %>%
+  pivot_longer(cols = c(DSRcC1x1000, DSRcHOSPx1000), 
+               names_to = "variable", 
+               values_to = "value") %>%
+  mutate(variable = recode(variable, 
+                           "DSRcHOSPx1000" = "General population", 
+                           "DSRcC1x1000" = "SUDT population")) %>% 
+  ggplot(., aes(x = as.factor(YEAR), y = value, color = DIAG1, linetype = DIAG1, group = DIAG1)) +
+  geom_line(size = 1, alpha = 0.8) +  # Cambié el tamaño y la opacidad de las líneas para mejor visibilidad
+  geom_text(aes(label = round(value, 1)), vjust = -0.5, size = 3.5, show.legend = FALSE) + # Añadir etiquetas de valores
+  scale_color_manual(values = c("E110" = "#1b9e77", "E111" = "#d95f02", "E112" = "#7570b3", 
+                                "E113" = "#e7298a", "E114" = "#66a61e", "E115" = "#e6ab02",
+                                "E116" = "#a6761d", "E117" = "#666666", "E118" = "#8e44ad",
+                                "E119" = "#3498db")) +  # Definir colores distintivos
+  scale_linetype_manual(values = c("E110" = "solid", "E111" = "dashed", "E112" = "dotted", 
+                                   "E113" = "dotdash", "E114" = "longdash", "E115" = "twodash", 
+                                   "E116" = "solid", "E117" = "dashed", "E118" = "dotted", 
+                                   "E119" = "dotdash")) +  # Definir diferentes tipos de línea
+  labs(x = "Year", 
+       y = TeX(r'($DSR = \frac{\sum_{}^{}\left(\frac{\it{E11.X - ICD10 Hospitalization}_{\it{sex and age}}}{\it{Hospitalization}_{\it{sex and age}}} *\it{Standardized Population}_{\it{sex and age}}\right)}{\sum_{}^{}\it{Standardized Population}_{\it{sex and age}}}*1000$)'), 
+       color = "Hospitalization", 
+       linetype = "Hospitalization") +  # Añadir leyenda de tipos de línea
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  ) + 
+  facet_wrap(~variable)
+
+ggsave("fig2.png", dpi = 1000, width = 15, height = 7, bg = "white")
+```
+
+```{r}
+#| label: libraries
+library(dplyr)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(forcats)
+library(survival)
+library(survminer)
+library(broom)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+
+options(knitr.kable.NA = "", dplyr.summarise.inform = FALSE)
+```
+
+## 1) Data loading (prefer in-memory; else RDS/Excel)
+
+```{r}
+#| label: data-load
+
+
+if (!exists("matched_dataE11")) {
+  if (file.exists("matched_dataE11.rds")) {
+    matched_dataE11 <- readRDS("matched_dataE11.rds")
+  }
+}
+if (!exists("matched_dataE11")) {
+  if (file.exists("dataE11.xlsx")) {
+    matched_dataE11 <- read_excel("dataE11.xlsx")
+  }
+}
+if (!exists("matched_dataE11")) {
+  if (file.exists("data/dataE11.xlsx")) {
+    matched_dataE11 <- read_excel("data/dataE11.xlsx")
+  }
+}
+
+vars_needed <- c(
+  "sexo","edad","estado_conyugal",
+  "escolaridad_ultimo_ano_cursado",
+  "condicion_ocupacional",
+  "sustancia_principal",
+  "frecuencia_de_consumo_sustancia_",
+  "compromiso_biopsicosocial",
+  "diff_days","t_obs","event"
+)
+df_model <- matched_dataE11 %>% dplyr::select(any_of(vars_needed))
+
+df_model %>%
+  head(5) %>%
+  kbl(caption = "Quick peek at key variables (first 5 rows)") %>%
+  kable_styling(full_width = FALSE)
+
+
+```
+
+## 2) Time & event construction (no renaming; robust coding)
+
+```{r}
+#| label: time-event
+has_tobs <- "t_obs" %in% names(df_model)
+use_tobs <- has_tobs && any(!is.na(df_model$t_obs))
+
+if (use_tobs) {
+  df_model$t_use <- as.numeric(df_model$t_obs)
+} else {
+  df_model$t_use <- as.numeric(df_model$diff_days)
+}
+
+event_num <- suppressWarnings(as.numeric(as.character(df_model$event)))
+evt_in_01 <- all(event_num %in% c(0,1,NA))
+evt_in_12 <- all(event_num %in% c(1,2,NA))
+
+if (evt_in_01) {
+  df_model$event_fail <- event_num
+} else if (evt_in_12) {
+  df_model$event_fail <- ifelse(event_num == 2, 1,
+                                ifelse(event_num == 1, 0, NA_real_))
+} else {
+  evtc <- tolower(as.character(df_model$event))
+  df_model$event_fail <- dplyr::case_when(
+    evtc %in% c("si","sí","yes","true","evento","event","failure","fail") ~ 1,
+    evtc %in% c("no","false","cens","censurado","censored") ~ 0,
+    TRUE ~ NA_real_
+  )
+}
+
+df_model <- df_model %>%
+  mutate(
+    event_fail = as.numeric(event_fail),
+    event_fail = ifelse(is.na(event_fail), NA_real_,
+                        ifelse(event_fail > 0, 1, 0)),
+    t_use = as.numeric(t_use)
+  )
+
+df_model <- df_model %>% filter(!is.na(t_use), !is.na(event_fail))
+df_surv <- df_model %>% filter(t_use > 0)
+
+df_surv %>%
+  summarise(
+    N = n(),
+    Events = sum(event_fail == 1, na.rm = TRUE),
+    `Event %` = round(100 * Events / N, 1),
+    `Median follow-up (days)` = round(median(t_use, na.rm = TRUE), 1),
+    `Min/Max time` = paste0(round(min(t_use, na.rm = TRUE),1)," / ",
+                            round(max(t_use, na.rm = TRUE),1))
+  ) %>%
+  kbl(caption = "Survival analysis set overview (t > 0)") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## 3) Recode levels to English (columns are preserved)
+
+```{r}
+#| label: recode-levels
+df_surv <- df_surv %>%
+  mutate(
+    edad = suppressWarnings(as.numeric(edad)),
+    sexo = case_when(
+      str_detect(tolower(as.character(sexo)), "muj") ~ "Female",
+      str_detect(tolower(as.character(sexo)), "fem") ~ "Female",
+      str_detect(tolower(as.character(sexo)), "hom|masc") ~ "Male",
+      TRUE ~ as.character(sexo)
+    ),
+    sexo = factor(sexo, levels = c("Female","Male")),
+    sustancia_principal = case_when(
+      str_detect(tolower(as.character(sustancia_principal)), "alcohol") ~ "Alcohol",
+      TRUE ~ "Other"
+    ),
+    sustancia_principal = factor(sustancia_principal, levels = c("Other","Alcohol")),
+    estado_conyugal = case_when(
+      str_detect(tolower(as.character(estado_conyugal)), "casad|conviv|pareja") ~ "Married/Partnered",
+      str_detect(tolower(as.character(estado_conyugal)), "solter|separad|viud|divorc") ~ "No partner",
+      TRUE ~ as.character(estado_conyugal)
+    ),
+    estado_conyugal = factor(estado_conyugal, levels = c("Married/Partnered","No partner")),
+    escolaridad_ultimo_ano_cursado = case_when(
+      str_detect(tolower(as.character(escolaridad_ultimo_ano_cursado)), "sin") ~ "Basic",
+      str_detect(tolower(as.character(escolaridad_ultimo_ano_cursado)), "básic|basic|primar") ~ "Basic",
+      str_detect(tolower(as.character(escolaridad_ultimo_ano_cursado)), "media|secund") ~ "Secondary",
+      str_detect(tolower(as.character(escolaridad_ultimo_ano_cursado)), "técn|tecnic|univers|super") ~ "Technical/University+",
+      TRUE ~ as.character(escolaridad_ultimo_ano_cursado)
+    ),
+    escolaridad_ultimo_ano_cursado = factor(escolaridad_ultimo_ano_cursado,
+                                            levels = c("Basic","Secondary","Technical/University+")),
+    condicion_ocupacional = case_when(
+      str_detect(tolower(as.character(condicion_ocupacional)), "trabaj") ~ "Working",
+      str_detect(tolower(as.character(condicion_ocupacional)), "cesant|busca") ~ "Unemployed",
+      str_detect(tolower(as.character(condicion_ocupacional)), "pension|jubil|hogar|ama|incapac|estudian|rent") ~ "Inactive",
+      TRUE ~ as.character(condicion_ocupacional)
+    ),
+    condicion_ocupacional = factor(condicion_ocupacional, levels = c("Inactive","Unemployed","Working")),
+    `frecuencia_de_consumo_sustancia_` = case_when(
+      str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "todos") ~ "Every day",
+      str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "5|6") ~ "4–6 days/week",
+      str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "4") ~ "4–6 days/week",
+      str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "2|3") & str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "sem") ~ "2–3 days/week",
+      str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "1") & str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "sem") ~ "1 day/week",
+      str_detect(tolower(as.character(`frecuencia_de_consumo_sustancia_`)), "menos|<|≤|ocas|irregular|espor") ~ "≤1 day/week",
+      TRUE ~ as.character(`frecuencia_de_consumo_sustancia_`)
+    ),
+    `frecuencia_de_consumo_sustancia_` = factor(`frecuencia_de_consumo_sustancia_`,
+            levels = c("≤1 day/week","1 day/week","2–3 days/week","4–6 days/week","Every day")),
+    compromiso_biopsicosocial = case_when(
+      tolower(as.character(compromiso_biopsicosocial)) %in% c("si","sí","yes","1","alto","severo") ~ "Yes",
+      tolower(as.character(compromiso_biopsicosocial)) %in% c("no","0","bajo","leve") ~ "No",
+      TRUE ~ as.character(compromiso_biopsicosocial)
+    ),
+    compromiso_biopsicosocial = factor(compromiso_biopsicosocial, levels = c("No","Yes"))
+  )
+```
+
+## 11) Nested models — **Cox PH** (M2 adds frequency)
+
+```{r}
+#| label: nested-cox
+# Base to full (M1..M6) with M2 adding frequency
+cox_m1 <- coxph(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad, data = df_surv)
+cox_m2 <- coxph(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_`, data = df_surv)
+cox_m3 <- coxph(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal, data = df_surv)
+cox_m4 <- coxph(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado, data = df_surv)
+cox_m5 <- coxph(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado + condicion_ocupacional, data = df_surv)
+cox_m6 <- coxph(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado + condicion_ocupacional + compromiso_biopsicosocial, data = df_surv)
+
+# Build wide table
+order_labels <- c(
+ "Primary substance: Alcohol vs Other",
+ "Sex: Male vs Female",
+ "Age (per year)",
+ "Use frequency: 1 day/week vs ≤1",
+ "Use frequency: 2–3 days/week vs ≤1",
+ "Use frequency: 4–6 days/week vs ≤1",
+ "Use frequency: Every day vs ≤1",
+ "Marital status: No partner vs Married/Partnered",
+ "Education: Secondary vs Basic",
+ "Education: Technical/University+ vs Basic",
+ "Occupational status: Unemployed vs Inactive",
+ "Occupational status: Working vs Inactive",
+ "Biopsychosocial compromise: Yes vs No"
+)
+
+mk_labels <- function(df) {
+  df %>%
+    filter(term != "(Intercept)") %>%
+    mutate(Label = case_when(
+      str_detect(term,"^sustancia_principal.*Alcohol") ~ "Primary substance: Alcohol vs Other",
+      str_detect(term,"^sexo.*Male") ~ "Sex: Male vs Female",
+      term == "edad" ~ "Age (per year)",
+      str_detect(term,"^frecuencia_de_consumo_sustancia_.*1.day|1\\sday") ~ "Use frequency: 1 day/week vs ≤1",
+      (str_detect(term,"^frecuencia_de_consumo_sustancia_") & str_detect(term,"2|3")) ~ "Use frequency: 2–3 days/week vs ≤1",
+      (str_detect(term,"^frecuencia_de_consumo_sustancia_") & str_detect(term,"4|6")) ~ "Use frequency: 4–6 days/week vs ≤1",
+      str_detect(term,"^frecuencia_de_consumo_sustancia_.*Every") ~ "Use frequency: Every day vs ≤1",
+      str_detect(term,"^estado_conyugal.*No.partner") ~ "Marital status: No partner vs Married/Partnered",
+      str_detect(term,"^escolaridad_ultimo_ano_cursado.*Secondary") ~ "Education: Secondary vs Basic",
+      str_detect(term,"^escolaridad_ultimo_ano_cursado.*Technical") ~ "Education: Technical/University+ vs Basic",
+      str_detect(term,"^condicion_ocupacional.*Unemployed") ~ "Occupational status: Unemployed vs Inactive",
+      str_detect(term,"^condicion_ocupacional.*Working") ~ "Occupational status: Working vs Inactive",
+      str_detect(term,"^compromiso_biopsicosocial.*Yes") ~ "Biopsychosocial compromise: Yes vs No",
+      TRUE ~ term))
+}
+
+cox1 <- tidy(cox_m1, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels() %>%
+  mutate(`M1 HR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M1 HR (95% CI)`)
+
+cox2 <- tidy(cox_m2, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels() %>%
+  mutate(`M2 HR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M2 HR (95% CI)`)
+
+cox3 <- tidy(cox_m3, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels() %>%
+  mutate(`M3 HR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M3 HR (95% CI)`)
+
+cox4 <- tidy(cox_m4, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels() %>%
+  mutate(`M4 HR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M4 HR (95% CI)`)
+
+cox5 <- tidy(cox_m5, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels() %>%
+  mutate(`M5 HR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M5 HR (95% CI)`)
+
+cox6 <- tidy(cox_m6, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels() %>%
+  mutate(`M6 HR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M6 HR (95% CI)`)
+
+cox_nested <- cox1 %>%
+  full_join(cox2, by = "Label") %>%
+  full_join(cox3, by = "Label") %>%
+  full_join(cox4, by = "Label") %>%
+  full_join(cox5, by = "Label") %>%
+  full_join(cox6, by = "Label") %>%
+  arrange(match(Label, order_labels))
+
+fit_cox <- tibble::tibble(
+  Label = c("N (used)", "Events (used)", "Log-likelihood", "AIC", "Harrell's C"),
+
+  M1 = c(
+    format(nobs(cox_m1), trim = TRUE),
+    format(cox_m1$nevent, trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(cox_m1))),
+    sprintf("%.2f", AIC(cox_m1)),
+    sprintf("%.3f", summary(cox_m1)$concordance[1])
+  ),
+
+  M2 = c(
+    format(nobs(cox_m2), trim = TRUE),
+    format(cox_m2$nevent, trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(cox_m2))),
+    sprintf("%.2f", AIC(cox_m2)),
+    sprintf("%.3f", summary(cox_m2)$concordance[1])
+  ),
+
+  M3 = c(
+    format(nobs(cox_m3), trim = TRUE),
+    format(cox_m3$nevent, trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(cox_m3))),
+    sprintf("%.2f", AIC(cox_m3)),
+    sprintf("%.3f", summary(cox_m3)$concordance[1])
+  ),
+
+  M4 = c(
+    format(nobs(cox_m4), trim = TRUE),
+    format(cox_m4$nevent, trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(cox_m4))),
+    sprintf("%.2f", AIC(cox_m4)),
+    sprintf("%.3f", summary(cox_m4)$concordance[1])
+  ),
+
+  M5 = c(
+    format(nobs(cox_m5), trim = TRUE),
+    format(cox_m5$nevent, trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(cox_m5))),
+    sprintf("%.2f", AIC(cox_m5)),
+    sprintf("%.3f", summary(cox_m5)$concordance[1])
+  ),
+
+  M6 = c(
+    format(nobs(cox_m6), trim = TRUE),
+    format(cox_m6$nevent, trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(cox_m6))),
+    sprintf("%.2f", AIC(cox_m6)),
+    sprintf("%.3f", summary(cox_m6)$concordance[1])
+  )
+)
+
+cox_table <- dplyr::bind_rows(
+  cox_nested %>% dplyr::rename(`M1`=`M1 HR (95% CI)`, `M2`=`M2 HR (95% CI)`,
+                               `M3`=`M3 HR (95% CI)`, `M4`=`M4 HR (95% CI)`,
+                               `M5`=`M5 HR (95% CI)`, `M6`=`M6 HR (95% CI)`),
+  fit_cox
+)
+
+
+cox_table <- dplyr::bind_rows(
+  cox_nested %>% dplyr::rename(`M1`=`M1 HR (95% CI)`, `M2`=`M2 HR (95% CI)`, `M3`=`M3 HR (95% CI)`,
+                        `M4`=`M4 HR (95% CI)`, `M5`=`M5 HR (95% CI)`, `M6`=`M6 HR (95% CI)`),
+  fit_cox
+)
+
+kbl(cox_table, caption = "Nested Cox proportional hazards models — single table (M2 adds consumption frequency)") %>%
+  kable_styling(full_width = FALSE) %>%
+  pack_rows("Coefficients (HR with 95% CI)", 1, nrow(cox_nested)) %>%
+  pack_rows("Model fit", nrow(cox_nested)+1, nrow(cox_table))
+```
+
+## 12) Nested models — **Weibull AFT** (M2 adds frequency; TR)
+
+```{r}
+#| label: nested-aft
+aft_w1 <- survreg(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad, data = df_surv, dist = "weibull")
+aft_w2 <- survreg(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_`, data = df_surv, dist = "weibull")
+aft_w3 <- survreg(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal, data = df_surv, dist = "weibull")
+aft_w4 <- survreg(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado, data = df_surv, dist = "weibull")
+aft_w5 <- survreg(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado + condicion_ocupacional, data = df_surv, dist = "weibull")
+aft_w6 <- survreg(Surv(t_use, event_fail) ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado + condicion_ocupacional + compromiso_biopsicosocial, data = df_surv, dist = "weibull")
+
+mk_labels_aft <- function(df) {
+  df %>%
+    filter(term != "(Intercept)") %>%
+    mutate(Label = case_when(
+      str_detect(term,"^sustancia_principal.*Alcohol") ~ "Primary substance: Alcohol vs Other",
+      str_detect(term,"^sexo.*Male") ~ "Sex: Male vs Female",
+      term == "edad" ~ "Age (per year)",
+      str_detect(term,"^frecuencia_de_consumo_sustancia_.*1.day|1\\sday") ~ "Use frequency: 1 day/week vs ≤1",
+      (str_detect(term,"^frecuencia_de_consumo_sustancia_") & str_detect(term,"2|3")) ~ "Use frequency: 2–3 days/week vs ≤1",
+      (str_detect(term,"^frecuencia_de_consumo_sustancia_") & str_detect(term,"4|6")) ~ "Use frequency: 4–6 days/week vs ≤1",
+      str_detect(term,"^frecuencia_de_consumo_sustancia_.*Every") ~ "Use frequency: Every day vs ≤1",
+      str_detect(term,"^estado_conyugal.*No.partner") ~ "Marital status: No partner vs Married/Partnered",
+      str_detect(term,"^escolaridad_ultimo_ano_cursado.*Secondary") ~ "Education: Secondary vs Basic",
+      str_detect(term,"^escolaridad_ultimo_ano_cursado.*Technical") ~ "Education: Technical/University+ vs Basic",
+      str_detect(term,"^condicion_ocupacional.*Unemployed") ~ "Occupational status: Unemployed vs Inactive",
+      str_detect(term,"^condicion_ocupacional.*Working") ~ "Occupational status: Working vs Inactive",
+      str_detect(term,"^compromiso_biopsicosocial.*Yes") ~ "Biopsychosocial compromise: Yes vs No",
+      TRUE ~ term))
+}
+
+aft1 <- tidy(aft_w1, conf.int = TRUE) %>% mk_labels_aft() %>%
+  mutate(TR = exp(estimate), TR_low = exp(conf.low), TR_high = exp(conf.high)) %>%
+  mutate(`M1 TR (95% CI)` = paste0(round(TR,2)," (",round(TR_low,2),"–",round(TR_high,2),")")) %>%
+  select(Label, `M1 TR (95% CI)`)
+
+aft2 <- tidy(aft_w2, conf.int = TRUE) %>% mk_labels_aft() %>%
+  mutate(TR = exp(estimate), TR_low = exp(conf.low), TR_high = exp(conf.high)) %>%
+  mutate(`M2 TR (95% CI)` = paste0(round(TR,2)," (",round(TR_low,2),"–",round(TR_high,2),")")) %>%
+  select(Label, `M2 TR (95% CI)`)
+
+aft3 <- tidy(aft_w3, conf.int = TRUE) %>% mk_labels_aft() %>%
+  mutate(TR = exp(estimate), TR_low = exp(conf.low), TR_high = exp(conf.high)) %>%
+  mutate(`M3 TR (95% CI)` = paste0(round(TR,2)," (",round(TR_low,2),"–",round(TR_high,2),")")) %>%
+  select(Label, `M3 TR (95% CI)`)
+
+aft4 <- tidy(aft_w4, conf.int = TRUE) %>% mk_labels_aft() %>%
+  mutate(TR = exp(estimate), TR_low = exp(conf.low), TR_high = exp(conf.high)) %>%
+  mutate(`M4 TR (95% CI)` = paste0(round(TR,2)," (",round(TR_low,2),"–",round(TR_high,2),")")) %>%
+  select(Label, `M4 TR (95% CI)`)
+
+aft5 <- tidy(aft_w5, conf.int = TRUE) %>% mk_labels_aft() %>%
+  mutate(TR = exp(estimate), TR_low = exp(conf.low), TR_high = exp(conf.high)) %>%
+  mutate(`M5 TR (95% CI)` = paste0(round(TR,2)," (",round(TR_low,2),"–",round(TR_high,2),")")) %>%
+  select(Label, `M5 TR (95% CI)`)
+
+aft6 <- tidy(aft_w6, conf.int = TRUE) %>% mk_labels_aft() %>%
+  mutate(TR = exp(estimate), TR_low = exp(conf.low), TR_high = exp(conf.high)) %>%
+  mutate(`M6 TR (95% CI)` = paste0(round(TR,2)," (",round(TR_low,2),"–",round(TR_high,2),")")) %>%
+  select(Label, `M6 TR (95% CI)`)
+
+order_labels <- c(
+ "Primary substance: Alcohol vs Other",
+ "Sex: Male vs Female",
+ "Age (per year)",
+ "Use frequency: 1 day/week vs ≤1",
+ "Use frequency: 2–3 days/week vs ≤1",
+ "Use frequency: 4–6 days/week vs ≤1",
+ "Use frequency: Every day vs ≤1",
+ "Marital status: No partner vs Married/Partnered",
+ "Education: Secondary vs Basic",
+ "Education: Technical/University+ vs Basic",
+ "Occupational status: Unemployed vs Inactive",
+ "Occupational status: Working vs Inactive",
+ "Biopsychosocial compromise: Yes vs No"
+)
+
+aft_nested <- aft1 %>%
+  full_join(aft2, by = "Label") %>%
+  full_join(aft3, by = "Label") %>%
+  full_join(aft4, by = "Label") %>%
+  full_join(aft5, by = "Label") %>%
+  full_join(aft6, by = "Label") %>%
+  arrange(match(Label, order_labels))
+
+aft_fit <- tibble::tibble(
+  Label = c("N (used)", "Log-likelihood", "AIC", "Scale (σ)", "Shape (k = 1/σ)"),
+
+  M1 = c(
+    format(nobs(aft_w1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(aft_w1))),
+    sprintf("%.2f", AIC(aft_w1)),
+    sprintf("%.3f", aft_w1$scale),
+    sprintf("%.3f", 1 / aft_w1$scale)
+  ),
+
+  M2 = c(
+    format(nobs(aft_w2), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(aft_w2))),
+    sprintf("%.2f", AIC(aft_w2)),
+    sprintf("%.3f", aft_w2$scale),
+    sprintf("%.3f", 1 / aft_w2$scale)
+  ),
+
+  M3 = c(
+    format(nobs(aft_w3), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(aft_w3))),
+    sprintf("%.2f", AIC(aft_w3)),
+    sprintf("%.3f", aft_w3$scale),
+    sprintf("%.3f", 1 / aft_w3$scale)
+  ),
+
+  M4 = c(
+    format(nobs(aft_w4), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(aft_w4))),
+    sprintf("%.2f", AIC(aft_w4)),
+    sprintf("%.3f", aft_w4$scale),
+    sprintf("%.3f", 1 / aft_w4$scale)
+  ),
+
+  M5 = c(
+    format(nobs(aft_w5), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(aft_w5))),
+    sprintf("%.2f", AIC(aft_w5)),
+    sprintf("%.3f", aft_w5$scale),
+    sprintf("%.3f", 1 / aft_w5$scale)
+  ),
+
+  M6 = c(
+    format(nobs(aft_w6), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(aft_w6))),
+    sprintf("%.2f", AIC(aft_w6)),
+    sprintf("%.3f", aft_w6$scale),
+    sprintf("%.3f", 1 / aft_w6$scale)
+  )
+)
+
+aft_table <- dplyr::bind_rows(
+  aft_nested %>% dplyr::rename(`M1`=`M1 TR (95% CI)`, `M2`=`M2 TR (95% CI)`,
+                               `M3`=`M3 TR (95% CI)`, `M4`=`M4 TR (95% CI)`,
+                               `M5`=`M5 TR (95% CI)`, `M6`=`M6 TR (95% CI)`),
+  aft_fit
+)
+
+
+aft_table <- dplyr::bind_rows(
+  aft_nested %>% dplyr::rename(`M1`=`M1 TR (95% CI)`, `M2`=`M2 TR (95% CI)`, `M3`=`M3 TR (95% CI)`,
+                        `M4`=`M4 TR (95% CI)`, `M5`=`M5 TR (95% CI)`, `M6`=`M6 TR (95% CI)`),
+  aft_fit
+)
+
+kbl(aft_table, caption = "Nested Weibull AFT models — single table (M2 adds consumption frequency)") %>%
+  kable_styling(full_width = FALSE) %>%
+  pack_rows("Coefficients (TR with 95% CI)", 1, nrow(aft_nested)) %>%
+  pack_rows("Model fit", nrow(aft_nested)+1, nrow(aft_table))
+```
+
+## 13) Nested models — **Logistic regression** (M2 adds frequency; OR)
+
+```{r}
+#| label: nested-logit
+glm_m1 <- glm(event_fail ~ sustancia_principal + sexo + edad, data = df_surv, family = binomial())
+glm_m2 <- glm(event_fail ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_`, data = df_surv, family = binomial())
+glm_m3 <- glm(event_fail ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal, data = df_surv, family = binomial())
+glm_m4 <- glm(event_fail ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado, data = df_surv, family = binomial())
+glm_m5 <- glm(event_fail ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado + condicion_ocupacional, data = df_surv, family = binomial())
+glm_m6 <- glm(event_fail ~ sustancia_principal + sexo + edad + `frecuencia_de_consumo_sustancia_` + estado_conyugal + escolaridad_ultimo_ano_cursado + condicion_ocupacional + compromiso_biopsicosocial, data = df_surv, family = binomial())
+
+mk_labels_log <- function(df) {
+  df %>%
+    filter(term != "(Intercept)") %>%
+    mutate(Label = case_when(
+      str_detect(term,"^sustancia_principal.*Alcohol") ~ "Primary substance: Alcohol vs Other",
+      str_detect(term,"^sexo.*Male") ~ "Sex: Male vs Female",
+      term == "edad" ~ "Age (per year)",
+      str_detect(term,"^frecuencia_de_consumo_sustancia_.*1.day|1\\sday") ~ "Use frequency: 1 day/week vs ≤1",
+      (str_detect(term,"^frecuencia_de_consumo_sustancia_") & str_detect(term,"2|3")) ~ "Use frequency: 2–3 days/week vs ≤1",
+      (str_detect(term,"^frecuencia_de_consumo_sustancia_") & str_detect(term,"4|6")) ~ "Use frequency: 4–6 days/week vs ≤1",
+      str_detect(term,"^frecuencia_de_consumo_sustancia_.*Every") ~ "Use frequency: Every day vs ≤1",
+      str_detect(term,"^estado_conyugal.*No.partner") ~ "Marital status: No partner vs Married/Partnered",
+      str_detect(term,"^escolaridad_ultimo_ano_cursado.*Secondary") ~ "Education: Secondary vs Basic",
+      str_detect(term,"^escolaridad_ultimo_ano_cursado.*Technical") ~ "Education: Technical/University+ vs Basic",
+      str_detect(term,"^condicion_ocupacional.*Unemployed") ~ "Occupational status: Unemployed vs Inactive",
+      str_detect(term,"^condicion_ocupacional.*Working") ~ "Occupational status: Working vs Inactive",
+      str_detect(term,"^compromiso_biopsicosocial.*Yes") ~ "Biopsychosocial compromise: Yes vs No",
+      TRUE ~ term))
+}
+
+log1 <- tidy(glm_m1, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels_log() %>%
+  mutate(`M1 OR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M1 OR (95% CI)`)
+
+log2 <- tidy(glm_m2, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels_log() %>%
+  mutate(`M2 OR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M2 OR (95% CI)`)
+
+log3 <- tidy(glm_m3, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels_log() %>%
+  mutate(`M3 OR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M3 OR (95% CI)`)
+
+log4 <- tidy(glm_m4, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels_log() %>%
+  mutate(`M4 OR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M4 OR (95% CI)`)
+
+log5 <- tidy(glm_m5, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels_log() %>%
+  mutate(`M5 OR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M5 OR (95% CI)`)
+
+log6 <- tidy(glm_m6, exponentiate = TRUE, conf.int = TRUE) %>% mk_labels_log() %>%
+  mutate(`M6 OR (95% CI)` = paste0(round(estimate,2)," (",round(conf.low,2),"–",round(conf.high,2),")")) %>%
+  select(Label, `M6 OR (95% CI)`)
+
+order_labels <- c(
+ "Primary substance: Alcohol vs Other",
+ "Sex: Male vs Female",
+ "Age (per year)",
+ "Use frequency: 1 day/week vs ≤1",
+ "Use frequency: 2–3 days/week vs ≤1",
+ "Use frequency: 4–6 days/week vs ≤1",
+ "Use frequency: Every day vs ≤1",
+ "Marital status: No partner vs Married/Partnered",
+ "Education: Secondary vs Basic",
+ "Education: Technical/University+ vs Basic",
+ "Occupational status: Unemployed vs Inactive",
+ "Occupational status: Working vs Inactive",
+ "Biopsychosocial compromise: Yes vs No"
+)
+
+log_nested <- log1 %>%
+  full_join(log2, by = "Label") %>%
+  full_join(log3, by = "Label") %>%
+  full_join(log4, by = "Label") %>%
+  full_join(log5, by = "Label") %>%
+  full_join(log6, by = "Label") %>%
+  arrange(match(Label, order_labels))
+
+glm_null <- glm(event_fail ~ 1, data = df_surv, family = binomial())
+LL0 <- as.numeric(logLik(glm_null))
+
+log_fit <- tibble::tibble(
+  Label = c("N (used)", "Events (used)", "Log-likelihood", "AIC", "McFadden pseudo-R^2"),
+
+  M1 = c(
+    format(nobs(glm_m1), trim = TRUE),
+    format(sum(model.frame(glm_m1)$event_fail == 1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(glm_m1))),
+    sprintf("%.2f", AIC(glm_m1)),
+    sprintf("%.3f", 1 - as.numeric(logLik(glm_m1)) / LL0)
+  ),
+
+  M2 = c(
+    format(nobs(glm_m2), trim = TRUE),
+    format(sum(model.frame(glm_m2)$event_fail == 1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(glm_m2))),
+    sprintf("%.2f", AIC(glm_m2)),
+    sprintf("%.3f", 1 - as.numeric(logLik(glm_m2)) / LL0)
+  ),
+
+  M3 = c(
+    format(nobs(glm_m3), trim = TRUE),
+    format(sum(model.frame(glm_m3)$event_fail == 1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(glm_m3))),
+    sprintf("%.2f", AIC(glm_m3)),
+    sprintf("%.3f", 1 - as.numeric(logLik(glm_m3)) / LL0)
+  ),
+
+  M4 = c(
+    format(nobs(glm_m4), trim = TRUE),
+    format(sum(model.frame(glm_m4)$event_fail == 1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(glm_m4))),
+    sprintf("%.2f", AIC(glm_m4)),
+    sprintf("%.3f", 1 - as.numeric(logLik(glm_m4)) / LL0)
+  ),
+
+  M5 = c(
+    format(nobs(glm_m5), trim = TRUE),
+    format(sum(model.frame(glm_m5)$event_fail == 1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(glm_m5))),
+    sprintf("%.2f", AIC(glm_m5)),
+    sprintf("%.3f", 1 - as.numeric(logLik(glm_m5)) / LL0)
+  ),
+
+  M6 = c(
+    format(nobs(glm_m6), trim = TRUE),
+    format(sum(model.frame(glm_m6)$event_fail == 1), trim = TRUE),
+    sprintf("%.3f", as.numeric(logLik(glm_m6))),
+    sprintf("%.2f", AIC(glm_m6)),
+    sprintf("%.3f", 1 - as.numeric(logLik(glm_m6)) / LL0)
+  )
+)
+
+log_table <- dplyr::bind_rows(
+  log_nested %>% dplyr::rename(`M1`=`M1 OR (95% CI)`, `M2`=`M2 OR (95% CI)`,
+                               `M3`=`M3 OR (95% CI)`, `M4`=`M4 OR (95% CI)`,
+                               `M5`=`M5 OR (95% CI)`, `M6`=`M6 OR (95% CI)`),
+  log_fit
+)
+
+kbl(log_table, caption = "Nested logistic regression models — single table (M2 adds consumption frequency)") %>%
+  kable_styling(full_width = FALSE) %>%
+  pack_rows("Coefficients (OR with 95% CI)", 1, nrow(log_nested)) %>%
+  pack_rows("Model fit", nrow(log_nested)+1, nrow(log_table))
+```
